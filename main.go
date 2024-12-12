@@ -1,33 +1,37 @@
 package main
 
 import (
-	"fmt"
-	"image"
-	"image/color"
-	"image/jpeg"
 	"math"
-	"os"
 
+	"github.com/N-ha-1050/MyNNGo/utils"
 	"gonum.org/v1/gonum/mat"
 )
 
-// 行列を表示
-func matPrint(X mat.Matrix) {
-	fa := mat.Formatted(X, mat.Prefix(""), mat.Squeeze())
-	fmt.Printf("%v\n", fa)
+func middleLayer(x mat.Matrix, w mat.Matrix, b mat.Matrix) mat.Matrix {
+	xr, _ := x.Dims()                // (1, n)
+	_, wc := w.Dims()                // (n, m)
+	xw := mat.NewDense(xr, wc, nil)  // (1, m)
+	xw.Product(x, w)                 // (1, n) @ (n, m) = (1, m)
+	u := mat.NewDense(xr, wc, nil)   // (1, m)
+	u.Add(xw, b)                     // (1, m) + (1, m) = (1, m)
+	res := mat.NewDense(xr, wc, nil) // (1, m)
+	res.Apply(
+		func(i, j int, v float64) float64 { // シグモイド関数
+			return 1 / (1 + math.Exp(-v))
+		},
+		u,
+	) // sigmoid((1, m)) = (1, m)
+	return res
 }
 
-// 各要素の値が0-1の行列をグレースケールでJpeg画像に保存
-func matSaveGrayImage(X mat.Matrix, name string) {
-	r, c := X.Dims()
-	img := image.NewGray(image.Rect(0, 0, c, r))
-	for i := 0; i < c; i++ {
-		for j := 0; j < r; j++ {
-			img.SetGray(i, j, color.Gray{Y: uint8(X.At(j, i) * 256)})
-		}
-	}
-	file, _ := os.Create(name)
-	jpeg.Encode(file, img, &jpeg.Options{Quality: 100})
+func outputLayer(x mat.Matrix, w mat.Matrix, b mat.Matrix) mat.Matrix {
+	xr, _ := x.Dims()               // (1, n)
+	_, wc := w.Dims()               // (n, m)
+	xw := mat.NewDense(xr, wc, nil) // (1, m)
+	xw.Product(x, w)                // (1, n) @ (n, m) = (1, m)
+	u := mat.NewDense(xr, wc, nil)  // (1, m)
+	u.Add(xw, b)                    // (1, m) + (1, m) = (1, m)
+	return u                        // 恒等関数
 }
 
 func main() {
@@ -52,26 +56,30 @@ func main() {
 
 	z := mat.NewDense(10, 10, nil) // 出力を格納する10x10のグリッド
 
-	w_x := 2.5 // x座標の入力の重み
-	w_y := 3.0 // y座標の入力の重み
+	// 重み
+	wIm := mat.NewDense(2, 2, []float64{4.0, 4.0, 4.0, 4.0}) // 中間層2x2の行列
+	wMo := mat.NewDense(2, 1, []float64{1.0, -1.0})          // 出力層2x1の行列
 
-	bias := 0.1 // バイアス
+	// バイアス
+	bIm := mat.NewDense(1, 2, []float64{3.0, -3.0}) // 中間層
+	bMo := mat.NewDense(1, 1, []float64{0.1})       // 出力層
 
 	// グリッドの各マスでニューロンの演算
 	for i := 0; i < 10; i++ {
 		for j := 0; j < 10; j++ {
 
-			// 入力と重みの積の総和 + バイアス
-			u := x.At(i, 0)*w_x + y.At(j, 0)*w_y + bias
+			// 順伝播
+			inp := mat.NewDense(1, 2, []float64{x.At(i, 0), y.At(j, 0)}) // 入力層
+			mid := middleLayer(inp, wIm, bIm)                            // 中間層
+			out := outputLayer(mid, wMo, bMo)                            // 出力層
 
-			// グリッドに出力を格納
-			zValue := 1 / (1 + math.Exp(-u))
-			z.Set(j, i, zValue)
+			// グリッドにNNの出力を格納
+			z.Set(j, i, out.At(0, 0))
 		}
 	}
 
-	matPrint(z)
+	utils.MatPrint(z)
 
 	// グリッドの表示
-	matSaveGrayImage(z, "sample.jpg")
+	utils.MatSaveGrayImage(z, "sample.jpg")
 }
